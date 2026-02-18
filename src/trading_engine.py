@@ -308,20 +308,27 @@ class TradingEngine:
         min_order_value = 10.0
         
         if order_value < min_order_value:
-            # Calculate size needed for $10 minimum with 1% buffer to account for quantization rounding
-            min_size_for_value = (min_order_value * 1.01) / signal.entry_price
+            # Calculate size needed for $10 minimum with 2% buffer to account for quantization rounding
+            min_size_for_value = (min_order_value * 1.02) / signal.entry_price
             # Quantize it
             quantized_size = self.client.quantize_size(symbol, min_size_for_value, round_up_to_min=True)
             new_order_value = quantized_size * signal.entry_price
             
-            # Verify the quantized size still meets minimum after rounding
-            if new_order_value < min_order_value:
-                # If still below, add one more step size
+            # Iteratively verify and adjust until we're above minimum
+            max_iterations = 5
+            iteration = 0
+            while new_order_value < min_order_value and iteration < max_iterations:
+                # Add one more step size
                 size_info = self.client.size_precision.get(symbol, self.client.size_precision['DEFAULT'])
                 quantized_size += size_info['step']
                 quantized_size = round(quantized_size, size_info['decimals'])
                 new_order_value = quantized_size * signal.entry_price
+                iteration += 1
             
+            # Final safety check
+            if new_order_value < min_order_value:
+                logger.warning(f"Unable to meet minimum order value for {symbol}: ${new_order_value:.2f} < ${min_order_value}")
+                return {'error': f'Cannot meet minimum order value of ${min_order_value}'}
 
         
         order_result = self.client.place_market_order(

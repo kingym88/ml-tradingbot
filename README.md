@@ -17,6 +17,7 @@ A production-grade, self-improving ML trading bot for Hyperliquid perpetuals wit
 ### 1. Installation
 
 ```bash
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
