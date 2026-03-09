@@ -77,11 +77,11 @@ hyperliquid_tradingbot_v1/
 │   ├── features/              # Technical indicators & sideways features
 │   ├── regime/                # Regime detection (trend + sideways)
 │   ├── ml/                    # ML models and training
-│   ├── strategies/            # Trading strategies (to be implemented)
-│   ├── risk/                  # Risk management (to be implemented)
-│   ├── exchange/              # Hyperliquid execution (to be implemented)
-│   ├── learning/              # Self-learning & metrics (to be implemented)
-│   ├── diagnostics/           # Failure analysis (to be implemented)
+│   ├── strategies/            # Trading strategies
+│   ├── risk/                  # Risk management
+│   ├── exchange/              # Hyperliquid execution
+│   ├── learning/              # Self-learning & metrics
+│   ├── diagnostics/           # Failure analysis
 │   └── utils/                 # Logging and utilities
 ├── data/                      # OHLCV CSV storage
 ├── models/                    # Trained model persistence
