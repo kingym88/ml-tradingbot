@@ -1,4 +1,4 @@
-# Hyperliquid ML Trading Bot
+# ML Trading Bot on Hyperliquid
 
 A production-grade, self-improving ML trading bot for Hyperliquid perpetuals with regime detection, sideways market analysis, and full configuration externalization.
 
