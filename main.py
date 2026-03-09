@@ -11,6 +11,7 @@ import sys
 import signal
 import time
 import logging
+import threading
 import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -113,6 +114,21 @@ class TradingBot:
         self.last_retrain_check = datetime.now()
         self.retrain_check_interval = timedelta(hours=6)
         self.last_data_update = datetime.now() - timedelta(minutes=self.data_update_interval)  # Force update on first run
+
+        # Fix 4: Circuit breaker state
+        self._trading_day = None
+        self._start_of_day_equity = None
+        self._daily_halted = False
+
+        # Fix 5: Per-symbol cooldown and daily trade cap state
+        self._cooldown_until = {}      # symbol -> datetime
+        self._daily_trade_count = {}   # symbol -> int  (reset daily)
+        self._known_positions = set()  # symbols with open positions last iteration
+        self._state_lock = threading.Lock()  # protects the dicts above
+
+        # Fix 8: Regime instrumentation state
+        self._iteration_count = 0
+        self._last_regime = {}   # symbol -> last logged regime
         
         self.logger.info(f"Initialized trading bot: "
                         f"coins={len(self.coin_list)}, "
@@ -171,7 +187,133 @@ class TradingBot:
                 self.trainer.retrain_if_needed(coin, force=False)
             except Exception as e:
                 self.logger.error(f"Error checking retrain for {coin}: {e}")
-    
+
+    # ── Fix 4 + 5: Risk / Cooldown helpers ────────────────────────────────
+
+    def _get_current_equity(self) -> float:
+        """Fetch live account equity from Hyperliquid."""
+        account_info = self.trading_engine.client.get_account_info()
+        if not account_info:
+            raise RuntimeError("get_account_info() returned None")
+        return float(account_info['account_value'])
+
+    def _check_daily_circuit_breaker(self) -> bool:
+        """
+        Returns True if trading is allowed, False if daily loss limit is hit.
+        Called at the top of every main loop iteration.
+        """
+        if not self.trading_engine:
+            return True  # Not yet initialized — allow through
+
+        today = datetime.utcnow().date()
+
+        # Reset at start of each new trading day
+        if self._trading_day != today:
+            # Fix 8: Log yesterday's summary before resetting
+            if self._trading_day is not None:
+                self.logger.warning(
+                    f"[DAY SUMMARY {self._trading_day}] "
+                    f"Total iterations: {self._iteration_count} | "
+                    f"Last regime distribution: {dict(self._last_regime)} | "
+                    f"Daily trades: {dict(self._daily_trade_count)}"
+                )
+            self._trading_day = today
+            self._daily_halted = False
+            with self._state_lock:
+                self._daily_trade_count = {}
+                self._known_positions = set()
+            try:
+                self._start_of_day_equity = self._get_current_equity()
+                self.logger.info(
+                    f"[CIRCUIT BREAKER] New day {today}. "
+                    f"Starting equity: ${self._start_of_day_equity:.2f}"
+                )
+            except Exception as e:
+                self.logger.error(f"[CIRCUIT BREAKER] Failed to get start equity: {e}")
+                self._start_of_day_equity = None
+
+        # If already halted today, keep halted
+        if self._daily_halted:
+            self.logger.debug("[CIRCUIT BREAKER] Trading halted for today.")
+            return False
+
+        # Can't check without a valid baseline
+        if not self._start_of_day_equity or self._start_of_day_equity <= 0:
+            return True
+
+        # Fetch current equity and compare
+        try:
+            current_equity = self._get_current_equity()
+        except Exception as e:
+            self.logger.warning(
+                f"[CIRCUIT BREAKER] Could not fetch equity: {e}. Allowing trade."
+            )
+            return True
+
+        daily_pnl_pct = (
+            (current_equity - self._start_of_day_equity) / self._start_of_day_equity
+        )
+        limit_pct = -abs(config.get('DAILY_LOSS_LIMIT_PERCENT', 3.0)) / 100.0
+
+        if daily_pnl_pct <= limit_pct:
+            self._daily_halted = True
+            self.logger.warning(
+                f"[CIRCUIT BREAKER TRIGGERED] Daily loss "
+                f"{daily_pnl_pct * 100:.2f}% hit limit {limit_pct * 100:.2f}%. "
+                f"Halting all trading for today. "
+                f"Start equity: ${self._start_of_day_equity:.2f} | "
+                f"Current equity: ${current_equity:.2f}"
+            )
+            return False
+
+        return True
+
+    def _set_cooldown(self, symbol: str, minutes: int = 15):
+        """Set a post-close cooldown for a symbol."""
+        until = datetime.utcnow() + timedelta(minutes=minutes)
+        with self._state_lock:
+            self._cooldown_until[symbol] = until
+        self.logger.info(
+            f"[COOLDOWN] {symbol} cooling down for {minutes}min "
+            f"until {until.strftime('%H:%M:%S')} UTC"
+        )
+
+    def _is_on_cooldown(self, symbol: str) -> bool:
+        """Return True if symbol is still in its post-close cooldown window."""
+        with self._state_lock:
+            if symbol not in self._cooldown_until:
+                return False
+            if datetime.utcnow() < self._cooldown_until[symbol]:
+                return True
+            del self._cooldown_until[symbol]
+            return False
+
+    # ──────────────────────────────────────────────────────────────────────
+
+    def _reconcile_positions(self):
+        """Compare in-memory vs live exchange position state. Log and correct desyncs."""
+        try:
+            raw_positions = self.trading_engine.client.get_positions()
+            exchange_positions = {p['symbol']: p for p in raw_positions if p.get('symbol')}
+            memory_positions = dict(self.trading_engine.position_tracker.positions)
+            all_symbols = set(memory_positions) | set(exchange_positions)
+            for symbol in all_symbols:
+                in_memory = symbol in memory_positions
+                on_exchange = symbol in exchange_positions
+                if in_memory != on_exchange:
+                    self.logger.warning(
+                        f"[POSITION DESYNC] {symbol}: "
+                        f"memory={'OPEN' if in_memory else 'FLAT'} "
+                        f"exchange={'OPEN' if on_exchange else 'FLAT'} "
+                        f"\u2014 syncing to exchange state"
+                    )
+                    if on_exchange:
+                        self.trading_engine.position_tracker.update_positions()
+                    else:
+                        self.trading_engine.position_tracker.positions.pop(symbol, None)
+        except Exception as e:
+            self.logger.error(f"[RECONCILIATION] Failed: {e}")
+
     def process_coin(self, coin: str) -> dict:
         """
         Process a single coin: get data, features, regime, and signal.
@@ -187,7 +329,44 @@ class TradingBot:
             if self.trading_engine and not self.trading_engine.client.is_symbol_available(coin):
                 self.logger.info(f"⏭️  Skipping {coin} - not available on Hyperliquid testnet")
                 return {'error': 'symbol_not_available', 'skipped': True}
-            
+
+            # ── Fix 5: Detect position closes → trigger cooldown ──────────
+            if self.trading_engine:
+                with self._state_lock:
+                    had_position = coin in self._known_positions
+                current_pos = self.trading_engine.position_tracker.get_position(coin)
+                has_position = current_pos is not None
+
+                if had_position and not has_position:
+                    # Position disappeared since last iteration (TP/SL/liquidation)
+                    self.logger.info(
+                        f"[COOLDOWN] {coin} position closed — starting 15-min cooldown"
+                    )
+                    self._set_cooldown(coin, minutes=15)
+
+                with self._state_lock:
+                    if has_position:
+                        self._known_positions.add(coin)
+                    else:
+                        self._known_positions.discard(coin)
+
+            # Cooldown gate
+            if self._is_on_cooldown(coin):
+                self.logger.debug(f"[COOLDOWN] Skipping {coin} — in cooldown")
+                return {'skipped': True, 'reason': 'cooldown'}
+
+            # Daily trade cap gate
+            max_trades = config.get('MAX_DAILY_TRADES_PER_SYMBOL', 6)
+            with self._state_lock:
+                today_count = self._daily_trade_count.get(coin, 0)
+            if today_count >= max_trades:
+                self.logger.info(
+                    f"[TRADE CAP] Skipping {coin} — daily limit reached "
+                    f"({today_count}/{max_trades})"
+                )
+                return {'skipped': True, 'reason': 'daily_cap'}
+            # ──────────────────────────────────────────────────────────────
+
             # Load latest data (already updated in batch)
             df = self.data_manager.load_data(coin)
             
@@ -213,7 +392,16 @@ class TradingBot:
             
             # Get current regime and confidence
             current_regime, regime_confidence = self.regime_classifier.get_current_regime(df_recent)
-            
+
+            # Fix 8: Log regime changes (WARNING level so it bypasses module-level filter)
+            prev_regime = self._last_regime.get(coin)
+            if current_regime != prev_regime:
+                self.logger.warning(
+                    f"[REGIME CHANGE] {coin}: {prev_regime or 'INIT'} \u2192 {current_regime} "
+                    f"(confidence: {regime_confidence:.3f})"
+                )
+                self._last_regime[coin] = current_regime
+
             # Prepare features for prediction (last row)
             feature_cols = [col for col in df_recent.columns 
                            if col not in ['target', 'regime', 'open', 'high', 'low', 'close', 'volume',
@@ -231,7 +419,13 @@ class TradingBot:
             signal, confidence = self.model_manager.predict_for_coin(
                 coin, current_regime, X_latest
             )
-            
+
+            # Fix 8: ML signal debug log
+            self.logger.debug(
+                f"[ML SIGNAL] {coin}: prediction={signal} "
+                f"confidence={confidence:.3f} regime={current_regime}"
+            )
+
             # Get current price from Binance data (for reference)
             binance_price = df_recent['close'].iloc[-1]
             
@@ -259,6 +453,14 @@ class TradingBot:
                     features=features_dict,
                     current_price=current_price
                 )
+
+                # Fix 5: Track new fills for daily cap + known-positions
+                if execution_result and execution_result.get('status') == 'filled':
+                    with self._state_lock:
+                        self._daily_trade_count[coin] = (
+                            self._daily_trade_count.get(coin, 0) + 1
+                        )
+                        self._known_positions.add(coin)
             
             result = {
                 'coin': coin,
@@ -301,7 +503,21 @@ class TradingBot:
             iteration += 1
             print(f"\n⏰ Iteration {iteration} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             self.logger.info(f"=== Trading iteration {iteration} ===")
+
+            # Fix 4: Circuit breaker — halt loop if daily loss limit is exceeded
+            if not self._check_daily_circuit_breaker():
+                sleep_seconds = config.get('TIMEFRAME_MINUTES', 1) * 60
+                self.logger.info(f"[CIRCUIT BREAKER] Sleeping {sleep_seconds}s before next check...")
+                for _ in range(sleep_seconds):
+                    if shutdown_requested:
+                        break
+                    time.sleep(1)
+                continue
             
+            # Fix 8: Per-iteration regime + signal counters (aggregated after coin loop)
+            regime_counts = {}
+            signal_counts = {'long': 0, 'short': 0, 'neutral': 0, 'skipped': 0}
+
             # Display account summary
             try:
                 if self.trading_engine and self.trading_engine.client.can_trade():
@@ -379,35 +595,63 @@ class TradingBot:
                         coin = future_to_coin[future]
                         try:
                             result = future.result()
-                            if 'error' not in result:
+                            # Exclude error results AND skipped results (no signal_confidence)
+                            if 'error' not in result and not result.get('skipped'):
                                 signals[coin] = result
                         except Exception as e:
                             self.logger.error(f"Error processing {coin}: {e}")
                 
+                # Fix 8: Aggregate regime + signal counts from coin results
+                for _coin, _sig in signals.items():
+                    if _sig.get('skipped'):
+                        signal_counts['skipped'] += 1
+                        continue
+                    _r = _sig.get('regime', 'UNKNOWN')
+                    regime_counts[_r] = regime_counts.get(_r, 0) + 1
+                    _s = _sig.get('signal', 0)
+                    if _s == 1:
+                        signal_counts['long'] += 1
+                    elif _s == -1:
+                        signal_counts['short'] += 1
+                    else:
+                        signal_counts['neutral'] += 1
+
                 # Filter signals by confidence
                 valid_signals = {
                     coin: sig for coin, sig in signals.items()
-                    if sig['signal_confidence'] >= self.min_confidence and sig['signal'] != 0
+                    if sig.get('signal_confidence', 0) >= self.min_confidence and sig.get('signal', 0) != 0
                 }
                 
                 filtered_signals = {
                     coin: sig for coin, sig in signals.items()
-                    if sig['signal_confidence'] < self.min_confidence and sig['signal'] != 0
+                    if sig.get('signal_confidence', 0) < self.min_confidence and sig.get('signal', 0) != 0
                 }
                 
-                self.logger.info(f"Generated {len(valid_signals)} valid signals "
-                               f"(min confidence: {self.min_confidence})")
-                
-                self.logger.info(f"Generated {len(valid_signals)} valid signals "
-                               f"(min confidence: {self.min_confidence})")
-                
-                # Summary for log file only
-                self.logger.info(f"Iteration {iteration} summary: {len(valid_signals)} valid, {len(filtered_signals)} filtered")
-                
+                # Fix 8: Full iteration summary (WARNING so it appears despite module filter)
+                self._iteration_count += 1
+                with self._state_lock:
+                    _cooldowns_active = sum(
+                        1 for t in self._cooldown_until.values()
+                        if datetime.utcnow() < t
+                    )
+                    _daily_trades_copy = dict(self._daily_trade_count)
+                self.logger.warning(
+                    f"[ITER {self._iteration_count:04d}] "
+                    f"Regimes: {regime_counts} | "
+                    f"Signals: {signal_counts} | "
+                    f"Cooldowns: {_cooldowns_active} | "
+                    f"Daily trades: {_daily_trades_copy} | "
+                    f"Halted: {self._daily_halted}"
+                )
+
+                # Every 10 iterations: reconcile in-memory vs exchange positions
+                if self._iteration_count % 10 == 0:
+                    self._reconcile_positions()
+
                 # Show message if no signals at all
                 if not valid_signals and not filtered_signals:
-                    print(f"⏸️  No signals generated this iteration")
-                
+                    print(f"\u23f8\ufe0f  No signals generated this iteration")
+
                 print("-" * 80 + "\n")
                 
             except Exception as e:

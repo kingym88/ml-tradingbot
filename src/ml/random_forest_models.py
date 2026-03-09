@@ -277,23 +277,40 @@ class RandomForestModelManager:
         
         logger.info(f"Training {coin} models on {len(X)} samples with {len(X.columns)} features")
         
-        # Train a model for each regime (for hyperparameter selection)
-        # but using the full dataset
+        # Fix 6: Train each regime model on regime-specific data (with floor fallback)
+        MIN_REGIME_SAMPLES = 300
+
         for regime in self.regimes:
+            # Filter to rows where this regime was active
+            regime_mask = df_with_regime['regime'] == regime
+            X_regime = X[regime_mask]
+            y_regime = y[regime_mask]
+
+            if len(X_regime) >= MIN_REGIME_SAMPLES:
+                logger.info(
+                    f"[TRAINING] {coin}/{regime}: {len(X_regime)} regime-specific samples"
+                )
+                X_train, y_train = X_regime, y_regime
+            else:
+                logger.warning(
+                    f"[TRAINING] {coin}/{regime}: only {len(X_regime)} samples "
+                    f"— falling back to full dataset ({len(X)} rows)"
+                )
+                X_train, y_train = X, y
+
             model = RandomForestModel(coin, regime)
-            
-            # Train on full dataset
-            metrics = model.train(X, y)
-            
+            metrics = model.train(X_train, y_train)
+
             if 'error' not in metrics:
                 self.models[coin][regime] = model
                 results[regime] = metrics
-                
+
                 # Save model
                 model.save()
             else:
                 logger.error(f"Failed to train {coin} {regime}: {metrics.get('error')}")
                 results[regime] = metrics
+
         
         return results
     

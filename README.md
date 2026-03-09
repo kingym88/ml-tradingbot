@@ -250,17 +250,12 @@ print(rc.get_regime_statistics(df))
 
 ## Warning
 
-⚠️ **This is experimental software for educational purposes.**
+⚠️ **This is an experimental code for fun & educational purposes.**
 
 - Cryptocurrency trading carries significant risk
 - Past performance does not guarantee future results
 - Start with testnet and paper trading
 - Never risk more than you can afford to lose
-- This software is provided AS-IS with no warranties
-
-## License
-
-MIT License - See LICENSE file for details
 
 ## Support
 

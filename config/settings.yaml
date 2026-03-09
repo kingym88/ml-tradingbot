@@ -53,7 +53,8 @@ MIN_CONFIDENCE: 0.55
 STOP_LOSS_PERCENT: 2.0
 TAKE_PROFIT_PERCENT: 3.0
 MAX_POSITION_SIZE_PERCENT: 5.0
-DAILY_LOSS_LIMIT_PERCENT: 5.0
+DAILY_LOSS_LIMIT_PERCENT: 3.0       # Fix 4: reduced from 5.0 -> 3.0
+MAX_DAILY_TRADES_PER_SYMBOL: 6      # Fix 5: per-symbol daily cap
 CLOSE_POSITIONS_ON_SHUTDOWN: false
 
 # ==================== DATA COLLECTION ====================
@@ -70,7 +71,7 @@ RETRAIN_INTERVAL_DAYS: 7
 
 # ==================== PREDICTION PARAMETERS ====================
 LOOK_AHEAD: 5
-PREDICTION_THRESHOLD: 0.0
+PREDICTION_THRESHOLD: 0.005         # Fix 6: raised from 0.0 -> 0.5% move required for a label
 
 # ==================== FEATURE ENGINEERING ====================
 MA_PERIODS: [5, 10, 20, 50]
@@ -140,6 +141,7 @@ ML:
       min_samples_split: 5
       min_samples_leaf: 2
       random_state: 42
+      class_weight: 'balanced'
 
   BEAR:
     RANDOM_FOREST:
@@ -148,6 +150,7 @@ ML:
       min_samples_split: 5
       min_samples_leaf: 2
       random_state: 42
+      class_weight: 'balanced'
 
   NEUTRAL_QUIET:
     RANDOM_FOREST:
@@ -156,6 +159,7 @@ ML:
       min_samples_split: 5
       min_samples_leaf: 2
       random_state: 42
+      class_weight: 'balanced'
 
   NEUTRAL_VOLATILE:
     RANDOM_FOREST:
@@ -164,6 +168,7 @@ ML:
       min_samples_split: 5
       min_samples_leaf: 2
       random_state: 42
+      class_weight: 'balanced'
 
   NEUTRAL_CHOPPY:
     RANDOM_FOREST:
@@ -172,6 +177,7 @@ ML:
       min_samples_split: 5
       min_samples_leaf: 2
       random_state: 42
+      class_weight: 'balanced'
 
   CHOPPY:
     RANDOM_FOREST:
@@ -180,6 +186,7 @@ ML:
       min_samples_split: 5
       min_samples_leaf: 2
       random_state: 42
+      class_weight: 'balanced'
 
 # ==================== LOGGING ====================
 LOG_DIR: logs
@@ -193,5 +200,5 @@ USE_TESTNET: true
 APP_ENV: testnet
 
 # ==================== ENVIRONMENT ====================
-ENABLE_LIVE_TRADING: true
+ENABLE_LIVE_TRADING: false  # FIX 7: disabled until testnet validation passes
 RISK_MODE: conservative

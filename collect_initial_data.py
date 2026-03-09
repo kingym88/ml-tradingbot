@@ -43,6 +43,8 @@ def main():
     # Collect data for each coin
     successful = 0
     failed = []
+    consecutive_failures = 0
+    MAX_CONSECUTIVE_FAILURES = 5
     
     for i, coin in enumerate(coin_list, 1):
         logger.info(f"[{i}/{len(coin_list)}] Fetching data for {coin}...")
@@ -58,8 +60,15 @@ def main():
                 # Update with latest data
                 logger.info(f"  - Updating with latest candles...")
                 updated_data = collector.update_data(coin, existing_data)
-                data_manager.save_data(coin, updated_data)
-                logger.info(f"  - Updated to {len(updated_data)} rows")
+                if len(updated_data) > len(existing_data):
+                    is_valid, issues = data_manager.validate_data(updated_data)
+                    if not is_valid:
+                        logger.warning(f"  - Validation issues for {coin}: {issues}")
+                    
+                    data_manager.save_data(coin, updated_data)
+                    logger.info(f"  - Updated to {len(updated_data)} rows")
+                else:
+                    logger.info("  - No new data available")
             else:
                 # Fetch fresh data
                 logger.info(f"  - No existing data, fetching {lookback_periods} periods...")
@@ -71,15 +80,24 @@ def main():
                     continue
                 
                 # Save data
+                is_valid, issues = data_manager.validate_data(df)
+                if not is_valid:
+                    logger.warning(f"  - Validation issues for {coin}: {issues}")
+                    
                 data_manager.save_data(coin, df)
                 logger.info(f"  - Saved {len(df)} rows")
                 logger.info(f"  - Date range: {df.index[0]} to {df.index[-1]}")
             
             successful += 1
+            consecutive_failures = 0
             
         except Exception as e:
             logger.error(f"  - Error fetching data for {coin}: {e}")
             failed.append(coin)
+            consecutive_failures += 1
+            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                logger.critical(f"Aborting: {MAX_CONSECUTIVE_FAILURES} consecutive failures. Possible network or API issue.")
+                break
     
     # Summary
     logger.info("")

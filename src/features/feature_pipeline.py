@@ -3,6 +3,7 @@ Feature pipeline orchestrator.
 Combines all feature engineering modules.
 """
 
+import numpy as np
 import pandas as pd
 import logging
 

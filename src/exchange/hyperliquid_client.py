@@ -99,27 +99,89 @@ class HyperliquidClient:
     def _initialize_client(self):
         """Initialize the Hyperliquid SDK client."""
         try:
+            # Pre-fetch and sanitize spot_meta to avoid "list index out of range"
+            # on testnet, which returns spot market entries with out-of-bounds token indices.
+            safe_spot_meta = self._fetch_safe_spot_meta()
+
             # Initialize Info client (read-only, no credentials needed)
-            self.info = Info(self.base_url, skip_ws=True)
+            # Pass pre-validated spot_meta so the SDK doesn't re-fetch the broken data
+            self.info = Info(self.base_url, skip_ws=True, spot_meta=safe_spot_meta)
             logger.info("Hyperliquid Info client initialized")
-            
+
             # Initialize Exchange client (requires credentials)
             if self.private_key and self.wallet_address:
                 # Create account object from private key (same as working bot)
                 from eth_account import Account
                 account = Account.from_key(self.private_key)
-                
-                # Initialize Exchange with account object
-                self.exchange = Exchange(account, self.base_url)
+
+                # Initialize Exchange with account object and pre-validated spot_meta
+                # so the Exchange's internal Info doesn't re-fetch broken testnet data
+                self.exchange = Exchange(
+                    account,
+                    self.base_url,
+                    account_address=self.wallet_address,
+                    spot_meta=safe_spot_meta,
+                )
                 logger.info("Hyperliquid Exchange client initialized successfully")
             else:
                 logger.warning("Hyperliquid credentials not found in environment")
                 logger.warning("Trading will be disabled - set HYPERLIQUID_PRIVATE_KEY and HYPERLIQUID_WALLET_ADDRESS")
-                
+
         except Exception as e:
             logger.error(f"Failed to initialize Hyperliquid client: {e}")
             self.info = None
             self.exchange = None
+
+    def _fetch_safe_spot_meta(self) -> dict:
+        """
+        Fetch spot metadata from the API and sanitize it to prevent
+        'list index out of range' errors caused by inconsistent testnet data.
+
+        The Hyperliquid testnet sometimes returns spot market entries whose
+        token indices (base/quote) exceed the length of the tokens list.
+        This method filters those bad entries out so the SDK can initialize safely.
+
+        Returns:
+            A sanitized spot_meta dict safe to pass to Info() and Exchange().
+        """
+        try:
+            from hyperliquid.api import API
+            api = API(self.base_url)
+            raw = api.post("/info", {"type": "spotMeta"})
+
+            tokens = raw.get("tokens", [])
+            universe = raw.get("universe", [])
+            n_tokens = len(tokens)
+
+            sanitized_universe = []
+            skipped = 0
+            for entry in universe:
+                token_indices = entry.get("tokens", [])
+                if len(token_indices) >= 2:
+                    base_idx, quote_idx = token_indices[0], token_indices[1]
+                    if base_idx < n_tokens and quote_idx < n_tokens:
+                        sanitized_universe.append(entry)
+                    else:
+                        skipped += 1
+                        logger.debug(
+                            f"Skipping spot market '{entry.get('name')}' — token indices "
+                            f"[{base_idx}, {quote_idx}] out of range (tokens list has {n_tokens} entries)"
+                        )
+                else:
+                    skipped += 1
+
+            if skipped:
+                logger.warning(
+                    f"Sanitized spot_meta: removed {skipped} invalid spot market entries "
+                    f"(out-of-range token indices). This is common on testnet."
+                )
+
+            return {"universe": sanitized_universe, "tokens": tokens}
+
+        except Exception as e:
+            logger.warning(f"Could not fetch spot_meta, using empty fallback: {e}")
+            # Return a safe empty spot_meta — perp trading will still work
+            return {"universe": [], "tokens": []}
     
     def is_connected(self) -> bool:
         """Check if client is connected and ready."""

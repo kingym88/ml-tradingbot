@@ -91,12 +91,27 @@ class ModelTrainer:
         
         # Generate targets
         df = self.generate_targets(df)
-        
-        # Drop rows with NaN targets
+
+        # Drop rows with NaN targets (last look_ahead rows have no future candle)
         df = df.dropna(subset=['target'])
-        
+
+        # Fix 6: Filter out neutral rows — model only trains on directional moves >= threshold
+        n_before = len(df)
+        df = df[df['target'] != 0].copy()
+        # Drop future_return now that filtering is complete
+        df = df.drop(columns=['future_return'], errors='ignore')
+
+        # Log label distribution
+        counts = df['target'].value_counts()
+        logger.info(
+            f"[TRAINING LABELS] {coin}: "
+            f"Long={counts.get(1, 0)} | "
+            f"Short={counts.get(-1, 0)} | "
+            f"Neutral excluded={n_before - len(df)}"
+        )
+
         logger.info(f"Prepared {len(df)} training samples for {coin}")
-        
+
         return df
     
     def generate_targets(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -130,8 +145,9 @@ class ModelTrainer:
         target_counts = df['target'].value_counts()
         logger.info(f"Target distribution: {target_counts.to_dict()}")
         
-        # Drop temporary columns
-        df = df.drop(columns=['future_close', 'future_return'])
+        # Drop future_close only — future_return is kept so prepare_training_data()
+        # can filter out neutral rows before training
+        df = df.drop(columns=['future_close'])
         
         return df
     

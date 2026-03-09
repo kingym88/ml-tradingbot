@@ -135,15 +135,23 @@ class TradingEngine:
         strategy_signal = self._generate_strategy_signal(
             symbol, ml_signal, ml_confidence, regime, features, current_price
         )
-        
+
+        # Fix 8: Log when strategy filters out a non-zero ML signal
         if not strategy_signal:
-            logger.debug(f"No strategy signal generated for {symbol}")
-            # Strategy already printed rejection reason
+            if ml_signal != 0:
+                logger.info(
+                    f"[SIGNAL FILTERED] {symbol}: ml={ml_signal} \u2192 strategy=None "
+                    f"(regime={regime}, confidence={ml_confidence:.3f})"
+                )
+            else:
+                logger.debug(f"No strategy signal generated for {symbol}")
             return None
+
         # Check risk limits
-        if not self._check_risk_limits():
-            logger.warning(f"Risk limits prevent opening position for {symbol}")
-            print(f"❌ {symbol:6} | {signal_dir:5} {ml_confidence:.0%} | {regime:6} | {strategy_name} | → Risk limits exceeded")
+        can_open, risk_reason = self._check_risk_limits()
+        if not can_open:
+            logger.warning(f"Risk limits prevent opening position for {symbol}: {risk_reason}")
+            print(f"❌ {symbol:6} | {signal_dir:5} {ml_confidence:.0%} | {regime:6} | {strategy_name} | → Risk limits exceeded: {risk_reason}")
             return None
         # Execute trade
         if self.enable_trading:
@@ -215,13 +223,13 @@ class TradingEngine:
         
         return None
     
-    def _check_risk_limits(self) -> bool:
-        """Check if we can open a new position."""
+    def _check_risk_limits(self) -> tuple:
+        """Check if we can open a new position. Returns (can_open, reason)."""
         # Get account info
         account_info = self.client.get_account_info()
         if not account_info:
             logger.error("Could not get account info")
-            return False
+            return False, "Could not get account info"
         
         # Calculate risk metrics
         positions = self.position_tracker.get_all_positions()
@@ -243,7 +251,7 @@ class TradingEngine:
         if not can_open:
             logger.warning(f"Cannot open position: {reason}")
         
-        return can_open
+        return can_open, reason
     
     def _execute_entry(self, symbol: str, signal, regime: str, features: Dict) -> Dict:
         """Execute entry trade."""
@@ -408,16 +416,20 @@ class TradingEngine:
         return order_result
 
     def _place_tp_sl_orders(self, symbol, entry_side, quantity, signal):
-        """Place Take Profit and Stop Loss orders."""
-        try:
-            # Logic to place TP/SL would go here
-            # Currently requires extending HyperliquidClient to support Algo/Trigger orders
-            logger.info(f"TP/SL placement for {symbol} not fully implemented yet")
-            # TODO: Implement proper TP/SL placement
-            pass
-        except Exception as e:
-            logger.error(f"Error placing TP/SL for {symbol}: {e}")
-        
+        """Place Take Profit and Stop Loss orders.
+
+        DEPRECATED: Superseded by self.client.place_tpsl_orders() called
+        inside _execute_entry(). This method is unreachable (zero call sites)
+        and will be removed in a future cleanup. Do not call.
+        """
+        # DEPRECATED: This method has no call sites in the codebase and
+        # contains undefined variable references (order, features, regime).
+        # TP/SL is handled by self.client.place_tpsl_orders() in _execute_entry().
+        raise NotImplementedError(
+            "_place_tp_sl_orders is deprecated. "
+            "Use self.client.place_tpsl_orders() via _execute_entry() instead."
+        )
+
         if not order:
             return {'error': 'Failed to place order'}
         

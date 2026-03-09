@@ -1,111 +1,53 @@
-# ==================== SENSITIVE DATA ====================
-# Environment variables (contains API keys and private keys)
+# Credentials and Secrets (CRITICAL)
 .env
 config/.env
-*.env
 
-# ==================== PYTHON ====================
+# Virtual Environment
+venv/
+env/
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Data Files (CSVs and Databases)
+data/*.csv
+data/*.db
+data/*.sqlite3
+data/*.csv.tmp
+
+# Models
+models/*.pkl
+models/*.joblib
+models/*.pt
+
+# Exports and Personal Trackers
+exports/
+pnl_king.xlsx
+
+# Python Caches
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# ==================== VIRTUAL ENVIRONMENTS ====================
-venv/
-ENV/
-env/
-.venv/
-
-# ==================== DATA FILES ====================
-# Historical price data (large CSV files)
-data/
-*.csv
-
-# Exported data
-exports/
-
-# ==================== MODELS ====================
-# Trained ML models (large pickle files)
-models/
-*.pkl
-*.joblib
-*.h5
-*.pt
-*.pth
-
-# ==================== LOGS ====================
-# Log files
-logs/
-*.log
-
-# ==================== DATABASES ====================
-# SQLite databases
-*.db
-*.sqlite
-*.sqlite3
-
-# ==================== IDE ====================
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.project
-.pydevproject
-.settings/
-
-# ==================== OS ====================
+# Mac OS Files
 .DS_Store
-Thumbs.db
-desktop.ini
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 
-# ==================== JUPYTER ====================
-.ipynb_checkpoints/
-*.ipynb
+# --- EXCLUDED SOURCE FOLDERS ---
 
-# ==================== TESTING ====================
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
+# Development Notes & Logs
+dev_notes/
 
-# ==================== MISC ====================
-# Temporary files
-*.tmp
-*.temp
-*.bak
-*.backup
+# Utility Scripts
+utilities/
 
-# Documentation that might contain sensitive info
-FIXES_SUMMARY.md
-PHASE_*.md
-VERIFICATION_COMPLETE.md
-claude.md
-HYPERLIQUID_INTEGRATION.md
-HYPERLIQUID_SDK_COMPLETE.md
-PROJECT_SUMMARY.md
+# Testing & Example Scripts
+testing_examples/
 
-# ==================== UTILITY SCRIPTS ====================
-# Internal utility scripts not needed for production
-backfill_trades.py
-check_precision.py
-check_symbols.py
-example_trader.py
-export_trades.py
+vibe-code-auditor
