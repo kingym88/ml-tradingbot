@@ -9,6 +9,7 @@ Run this before first training or bot startup:
 
 import sys
 from pathlib import Path
+from datetime import datetime
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -70,9 +71,10 @@ def main():
                 else:
                     logger.info("  - No new data available")
             else:
-                # Fetch fresh data
-                logger.info(f"  - No existing data, fetching {lookback_periods} periods...")
-                df = collector.fetch_ohlcv(coin, limit=lookback_periods)
+                # Fetch fresh data (historical)
+                start_date = datetime(2023, 1, 1)
+                logger.info(f"  - No existing data, fetching all data since {start_date.strftime('%Y-%m-%d')}...")
+                df = collector.fetch_all_data_since(coin, since_date=start_date)
                 
                 if df.empty:
                     logger.warning(f"  - Failed to fetch data for {coin}")

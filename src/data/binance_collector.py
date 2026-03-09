@@ -109,6 +109,45 @@ class BinanceCollector:
                 logger.warning(f"Attempt {attempt + 1}/{max_retries} failed for {symbol}: {e}. Retrying...")
                 time.sleep(1 + attempt)
     
+    def fetch_all_data_since(self, symbol: str, since_date: datetime) -> pd.DataFrame:
+        """
+        Fetch all historical data for a symbol from a specific start date.
+        Due to Binance limits, this paginates across multiple requests.
+        """
+        logger.info(f"Starting historical data collection for {symbol} since {since_date.strftime('%Y-%m-%d')}...")
+        all_data = []
+        current_since = since_date
+        
+        while True:
+            # Binance limits to 1000 per request
+            batch_df = self.fetch_ohlcv(
+                symbol,
+                limit=1000,
+                since=current_since
+            )
+            
+            if batch_df.empty:
+                break
+                
+            all_data.append(batch_df)
+            
+            # If we returned fewer than 1000 candles, we hit the present time
+            if len(batch_df) < 1000:
+                break
+                
+            # Set the next request to start 1 minute after the last candle we just fetched
+            current_since = batch_df.index[-1] + timedelta(minutes=1)
+            time.sleep(0.1)  # Throttle to avoid getting rate limited immediately
+            
+        if not all_data:
+            return pd.DataFrame()
+            
+        final_df = pd.concat(all_data)
+        final_df = final_df[~final_df.index.duplicated(keep='last')]
+        final_df.sort_index(inplace=True)
+        logger.info(f"Successfully collected {len(final_df)} historical candles for {symbol}")
+        return final_df
+    
     def fetch_latest_candle(self, symbol: str) -> Optional[pd.Series]:
         """
         Fetch the latest candle for a symbol.
