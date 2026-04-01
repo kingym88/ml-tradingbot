@@ -57,7 +57,8 @@ class RandomForestModel(BaseModel):
                 'max_depth': 10,
                 'min_samples_split': 5,
                 'min_samples_leaf': 2,
-                'random_state': 42
+                'random_state': 42,
+                'class_weight': 'balanced'
             }
         
         return params
