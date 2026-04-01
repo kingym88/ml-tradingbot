@@ -55,6 +55,7 @@ TAKE_PROFIT_PERCENT: 4.0 # was: 3.0
 MAX_POSITION_SIZE_PERCENT: 5.0
 DAILY_LOSS_LIMIT_PERCENT: 3.0 # Fix 4: reduced from 5.0 -> 3.0
 MAX_DAILY_TRADES_PER_SYMBOL: 6 # Fix 5: per-symbol daily cap
+MIN_HOLD_MINUTES: 30 # Fix 3: minimum hold time to prevent flash trades
 CLOSE_POSITIONS_ON_SHUTDOWN: false
 
 # ==================== DATA COLLECTION ====================

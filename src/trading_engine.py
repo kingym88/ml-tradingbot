@@ -465,6 +465,18 @@ class TradingEngine:
     
     def _manage_existing_position(self, symbol: str, position, regime: str, features: Dict) -> Optional[Dict]:
         """Manage existing position."""
+        # Fix 3: Minimum hold time check
+        min_hold_minutes = config.min_hold_minutes
+        hold_time_delta = datetime.now() - position.opened_at
+        hold_minutes = hold_time_delta.total_seconds() / 60.0
+
+        if hold_minutes < min_hold_minutes:
+            logger.debug(
+                f"{symbol}: skip exit \u2014 held only {hold_minutes:.1f}min / "
+                f"{min_hold_minutes}min"
+            )
+            return None
+
         # Check if we should exit
         is_long = position.is_long
         

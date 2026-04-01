@@ -90,18 +90,37 @@ class PositionTracker:
         try:
             exchange_positions = self.client.get_positions()
             
-            # Clear existing positions
-            self.positions.clear()
+            # Keep track of active symbols to identify closed positions
+            active_symbols = set()
             
             # Update with exchange positions
             for pos_data in exchange_positions:
-                position = self._parse_position(pos_data)
-                if position:
-                    # Ignore dust positions (< $2 notional)
-                    if position.notional_value > 2.0:
-                        self.positions[position.symbol] = position
-                    else:
-                        logger.debug(f"Ignoring dust position for {position.symbol}: ${position.notional_value:.2f}")
+                new_pos = self._parse_position(pos_data)
+                if not new_pos:
+                    continue
+                
+                # Ignore dust positions (< $2 notional)
+                if new_pos.notional_value <= 2.0:
+                    logger.debug(f"Ignoring dust position for {new_pos.symbol}: ${new_pos.notional_value:.2f}")
+                    continue
+                
+                symbol = new_pos.symbol
+                active_symbols.add(symbol)
+                
+                # RECONCILE: If we already track this symbol, preserve the 'opened_at' time
+                if symbol in self.positions:
+                    existing_pos = self.positions[symbol]
+                    # Update fields but keep original opened_at
+                    new_pos.opened_at = existing_pos.opened_at
+                
+                self.positions[symbol] = new_pos
+            
+            # Remove positions that are no longer active on the exchange
+            current_tracked_symbols = list(self.positions.keys())
+            for symbol in current_tracked_symbols:
+                if symbol not in active_symbols:
+                    logger.info(f"Position for {symbol} closed (no longer on exchange)")
+                    del self.positions[symbol]
             
             logger.debug(f"Updated {len(self.positions)} positions")
             return True

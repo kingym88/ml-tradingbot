@@ -139,6 +139,11 @@ class ConfigLoader:
         return self.get('TAKE_PROFIT_PERCENT', 4.0)
     
     @property
+    def min_hold_minutes(self) -> int:
+        """Get minimum hold time in minutes."""
+        return self.get('MIN_HOLD_MINUTES', 30)
+    
+    @property
     def position_size_percent(self) -> float:
         """Get base position size percentage."""
         return self.get('POSITION_SIZE_PERCENT', 2.0)
