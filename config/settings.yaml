@@ -51,7 +51,7 @@ MIN_CONFIDENCE: 0.55
 #   BULL: 15
 #   BEAR: 15
 STOP_LOSS_PERCENT: 2.0
-TAKE_PROFIT_PERCENT: 3.0
+TAKE_PROFIT_PERCENT: 4.0 # was: 3.0
 MAX_POSITION_SIZE_PERCENT: 5.0
 DAILY_LOSS_LIMIT_PERCENT: 3.0 # Fix 4: reduced from 5.0 -> 3.0
 MAX_DAILY_TRADES_PER_SYMBOL: 6 # Fix 5: per-symbol daily cap
@@ -62,16 +62,18 @@ DATA_DIR: data
 BINANCE_API_URL: https://api.binance.com/api
 TIMEFRAME_MINUTES: 1 # Candle size (1m candles)
 DATA_UPDATE_INTERVAL_MINUTES: 1 # How often to fetch fresh data (changed from 15 to 1 for real-time trading)
-LOOKBACK_PERIODS: 200
+LOOKBACK_PERIODS: 5000 # was: 200
 PRICE_FILE_TEMPLATE: "{coin}_1m.csv"
 
 # ==================== MODEL MANAGEMENT ====================
 MODEL_DIR: models
 RETRAIN_INTERVAL_DAYS: 7
 
-# ==================== PREDICTION PARAMETERS ====================
-LOOK_AHEAD: 5
-PREDICTION_THRESHOLD: 0.005 # Fix 6: raised from 0.0 -> 0.5% move required for a label
+# LOOK_AHEAD must match the expected hold duration implied by TP/SL settings.
+# Formula: LOOK_AHEAD ≈ (minutes until TP is typically hit). With 4% TP on alts, this is
+# roughly 120-240 minutes of 1min candles.
+LOOK_AHEAD: 180 # was: 5
+PREDICTION_THRESHOLD: 0.015 # was: 0.005
 
 # ==================== FEATURE ENGINEERING ====================
 MA_PERIODS: [5, 10, 20, 50]

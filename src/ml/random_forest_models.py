@@ -278,7 +278,7 @@ class RandomForestModelManager:
         logger.info(f"Training {coin} models on {len(X)} samples with {len(X.columns)} features")
         
         # Fix 6: Train each regime model on regime-specific data (with floor fallback)
-        MIN_REGIME_SAMPLES = 300
+        MIN_REGIME_SAMPLES = 100 # was: 300
 
         for regime in self.regimes:
             # Filter to rows where this regime was active

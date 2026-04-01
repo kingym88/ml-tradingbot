@@ -136,7 +136,7 @@ class ConfigLoader:
     @property
     def take_profit_percent(self) -> float:
         """Get take-profit percentage."""
-        return self.get('TAKE_PROFIT_PERCENT', 3.0)
+        return self.get('TAKE_PROFIT_PERCENT', 4.0)
     
     @property
     def position_size_percent(self) -> float:
@@ -181,12 +181,12 @@ class ConfigLoader:
     @property
     def look_ahead(self) -> int:
         """Get prediction look-ahead period."""
-        return self.get('LOOK_AHEAD', 5)
+        return self.get('LOOK_AHEAD', 180)
     
     @property
     def prediction_threshold(self) -> float:
         """Get prediction threshold for labeling."""
-        return self.get('PREDICTION_THRESHOLD', 0.0)
+        return self.get('PREDICTION_THRESHOLD', 0.015)
 
 
 # Global config instance
