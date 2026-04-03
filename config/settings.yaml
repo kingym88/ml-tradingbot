@@ -50,12 +50,12 @@ MIN_CONFIDENCE: 0.55
 #   SIDEWAYS_VOLATILE: 5
 #   BULL: 15
 #   BEAR: 15
-STOP_LOSS_PERCENT: 2.0
+STOP_LOSS_PERCENT: 3.0 # was: 2.0 — widened to allow 3h predictions room
 TAKE_PROFIT_PERCENT: 4.0 # was: 3.0
 MAX_POSITION_SIZE_PERCENT: 5.0
 DAILY_LOSS_LIMIT_PERCENT: 3.0 # Fix 4: reduced from 5.0 -> 3.0
 MAX_DAILY_TRADES_PER_SYMBOL: 6 # Fix 5: per-symbol daily cap
-MIN_HOLD_MINUTES: 30 # Fix 3: minimum hold time to prevent flash trades
+MIN_HOLD_MINUTES: 120 # was: 30 — increased to match LOOK_AHEAD of 180 candles (3h)
 CLOSE_POSITIONS_ON_SHUTDOWN: false
 
 # ==================== DATA COLLECTION ====================
